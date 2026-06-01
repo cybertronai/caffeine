@@ -23,9 +23,10 @@ jobs:
           sudo -n true
           powermetrics --help > powermetrics-output/help.txt 2>&1 || true
 
+          set +e
           for sampler in cpu_power gpu_power ane_power smc all; do
             echo "=== sampler: ${sampler} ===" | tee "powermetrics-output/${sampler}.txt"
-            timeout 30 sudo powermetrics --samplers "${sampler}" -n 3 -i 1000 \
+            sudo powermetrics --samplers "${sampler}" -n 3 -i 1000 \
               >> "powermetrics-output/${sampler}.txt" 2>&1
             status=$?
             echo "exit_status=${status}" >> "powermetrics-output/${sampler}.txt"
