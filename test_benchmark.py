@@ -34,6 +34,17 @@ def test_student_initialization_is_deterministic() -> None:
         assert torch.equal(params1[name], params2[name]), name
 
 
+def test_teacher_uses_aggressive_uniform_initialization() -> None:
+    teacher = build_teacher(CONFIG)
+    student = build_student(CONFIG)
+    teacher_params = torch.cat([parameter.flatten() for parameter in teacher.parameters()])
+    student_params = torch.cat([parameter.flatten() for parameter in student.parameters()])
+
+    assert teacher_params.min() >= -1.0
+    assert teacher_params.max() <= 1.0
+    assert teacher_params.std() > student_params.std() * 5.0
+
+
 def test_submission_must_be_optimizer_subclass() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         path = Path(tmp) / "bad_submission.py"
@@ -66,15 +77,15 @@ def test_baseline_runs_on_tiny_config() -> None:
         max_steps=2,
         eval_every=1,
         target_mse=0.0,
-        target_weight_mse=0.0,
+        target_relative_weight_error=0.0,
     )
     result = run_benchmark(Path("submissions/adamw/submission.py"), config)
     assert result["status"] == "fail"
     assert result["steps"] == 2
     assert result["initial_eval_mse"] >= 0.0
-    assert result["initial_weight_mse"] >= 0.0
+    assert result["initial_relative_weight_error"] >= 0.0
     assert result["final_eval_mse"] >= 0.0
-    assert result["final_weight_mse"] >= 0.0
+    assert result["final_relative_weight_error"] >= 0.0
     assert result["device"] in {"cpu", "mps"}
 
 

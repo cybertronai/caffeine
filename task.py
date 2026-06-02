@@ -13,7 +13,7 @@ class TaskConfig:
     max_steps: int = 400
     eval_every: int = 100
     target_mse: float = 4.0e-7
-    target_weight_mse: float = 6.958e-3
+    target_relative_weight_error: float = 0.14437
 
     teacher_seed: int = 1729
     student_seed: int = 314159

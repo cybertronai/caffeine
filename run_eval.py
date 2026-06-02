@@ -51,14 +51,14 @@ def evaluate(model: torch.nn.Module, inputs: torch.Tensor, targets: torch.Tensor
 
 
 @torch.no_grad()
-def parameter_mse(model: torch.nn.Module, teacher: torch.nn.Module) -> float:
-    total = 0.0
-    count = 0
+def relative_weight_error(model: torch.nn.Module, teacher: torch.nn.Module) -> float:
+    diff_total = 0.0
+    teacher_total = 0.0
     for parameter, teacher_parameter in zip(model.parameters(), teacher.parameters(), strict=True):
         diff = parameter.detach() - teacher_parameter.detach()
-        total += float(diff.square().sum().item())
-        count += diff.numel()
-    return total / count
+        diff_total += float(diff.square().sum().item())
+        teacher_total += float(teacher_parameter.detach().square().sum().item())
+    return (diff_total / teacher_total) ** 0.5
 
 
 def run_benchmark(submission_path: Path, config: TaskConfig) -> dict[str, Any]:
@@ -79,10 +79,10 @@ def run_benchmark(submission_path: Path, config: TaskConfig) -> dict[str, Any]:
     optimizer = optimizer_cls(model.parameters())
 
     initial_eval_mse = evaluate(model, eval_inputs, eval_targets)
-    initial_weight_mse = parameter_mse(model, teacher)
+    initial_relative_weight_error = relative_weight_error(model, teacher)
     best_eval_mse = initial_eval_mse
-    best_weight_mse = initial_weight_mse
-    passed = initial_weight_mse <= config.target_weight_mse
+    best_relative_weight_error = initial_relative_weight_error
+    passed = initial_relative_weight_error <= config.target_relative_weight_error
     pass_step = 0 if passed else None
     pass_duration_s = 0.0 if passed else None
 
@@ -103,10 +103,10 @@ def run_benchmark(submission_path: Path, config: TaskConfig) -> dict[str, Any]:
 
         if step % config.eval_every == 0 or step == config.max_steps:
             eval_mse = evaluate(model, eval_inputs, eval_targets)
-            weight_mse = parameter_mse(model, teacher)
+            relative_error = relative_weight_error(model, teacher)
             best_eval_mse = min(best_eval_mse, eval_mse)
-            best_weight_mse = min(best_weight_mse, weight_mse)
-            if weight_mse <= config.target_weight_mse:
+            best_relative_weight_error = min(best_relative_weight_error, relative_error)
+            if relative_error <= config.target_relative_weight_error:
                 passed = True
                 pass_step = step
                 synchronize_device(device)
@@ -116,7 +116,7 @@ def run_benchmark(submission_path: Path, config: TaskConfig) -> dict[str, Any]:
     synchronize_device(device)
     total_duration_s = time.perf_counter() - start
     final_eval_mse = evaluate(model, eval_inputs, eval_targets)
-    final_weight_mse = parameter_mse(model, teacher)
+    final_relative_weight_error = relative_weight_error(model, teacher)
     status = "pass" if passed else "fail"
 
     return {
@@ -129,13 +129,13 @@ def run_benchmark(submission_path: Path, config: TaskConfig) -> dict[str, Any]:
         "max_steps": config.max_steps,
         "eval_every": config.eval_every,
         "initial_eval_mse": initial_eval_mse,
-        "initial_weight_mse": initial_weight_mse,
+        "initial_relative_weight_error": initial_relative_weight_error,
         "final_eval_mse": final_eval_mse,
-        "final_weight_mse": final_weight_mse,
+        "final_relative_weight_error": final_relative_weight_error,
         "best_eval_mse": best_eval_mse,
-        "best_weight_mse": best_weight_mse,
+        "best_relative_weight_error": best_relative_weight_error,
         "target_mse": config.target_mse,
-        "target_weight_mse": config.target_weight_mse,
+        "target_relative_weight_error": config.target_relative_weight_error,
         "last_train_loss": last_loss,
         "python": sys.version.split()[0],
         "torch": torch.__version__,
