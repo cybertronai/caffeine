@@ -33,6 +33,17 @@ def import_submission(path: Path) -> type[torch.optim.Optimizer]:
     return submission
 
 
+def select_device() -> torch.device:
+    if torch.backends.mps.is_available():
+        return torch.device("mps")
+    return torch.device("cpu")
+
+
+def synchronize_device(device: torch.device) -> None:
+    if device.type == "mps":
+        torch.mps.synchronize()
+
+
 @torch.no_grad()
 def evaluate(model: torch.nn.Module, inputs: torch.Tensor, targets: torch.Tensor) -> float:
     model.eval()
@@ -54,14 +65,20 @@ def run_benchmark(submission_path: Path, config: TaskConfig) -> dict[str, Any]:
     optimizer_cls = import_submission(submission_path)
 
     torch.set_num_threads(1)
+    device = select_device()
     teacher = build_teacher(config)
     train_data = build_train_dataset(teacher, config)
     eval_data = build_eval_dataset(teacher, config)
-    batch_indices = build_batch_indices(config)
-    model = build_student(config)
+    batch_indices = build_batch_indices(config).to(device)
+    teacher = teacher.to(device)
+    train_inputs = train_data.inputs.to(device)
+    train_targets = train_data.targets.to(device)
+    eval_inputs = eval_data.inputs.to(device)
+    eval_targets = eval_data.targets.to(device)
+    model = build_student(config).to(device)
     optimizer = optimizer_cls(model.parameters())
 
-    initial_eval_mse = evaluate(model, eval_data.inputs, eval_data.targets)
+    initial_eval_mse = evaluate(model, eval_inputs, eval_targets)
     initial_weight_mse = parameter_mse(model, teacher)
     best_eval_mse = initial_eval_mse
     best_weight_mse = initial_weight_mse
@@ -69,13 +86,14 @@ def run_benchmark(submission_path: Path, config: TaskConfig) -> dict[str, Any]:
     pass_step = 0 if passed else None
     pass_duration_s = 0.0 if passed else None
 
+    synchronize_device(device)
     start = time.perf_counter()
     last_loss = float("nan")
     for step in range(1, config.max_steps + 1):
         model.train()
         indices = batch_indices[step - 1]
-        inputs = train_data.inputs[indices]
-        targets = train_data.targets[indices]
+        inputs = train_inputs[indices]
+        targets = train_targets[indices]
 
         optimizer.zero_grad(set_to_none=True)
         loss = F.mse_loss(model(inputs), targets)
@@ -84,18 +102,20 @@ def run_benchmark(submission_path: Path, config: TaskConfig) -> dict[str, Any]:
         last_loss = float(loss.item())
 
         if step % config.eval_every == 0 or step == config.max_steps:
-            eval_mse = evaluate(model, eval_data.inputs, eval_data.targets)
+            eval_mse = evaluate(model, eval_inputs, eval_targets)
             weight_mse = parameter_mse(model, teacher)
             best_eval_mse = min(best_eval_mse, eval_mse)
             best_weight_mse = min(best_weight_mse, weight_mse)
             if weight_mse <= config.target_weight_mse:
                 passed = True
                 pass_step = step
+                synchronize_device(device)
                 pass_duration_s = time.perf_counter() - start
                 break
 
+    synchronize_device(device)
     total_duration_s = time.perf_counter() - start
-    final_eval_mse = evaluate(model, eval_data.inputs, eval_data.targets)
+    final_eval_mse = evaluate(model, eval_inputs, eval_targets)
     final_weight_mse = parameter_mse(model, teacher)
     status = "pass" if passed else "fail"
 
@@ -119,6 +139,8 @@ def run_benchmark(submission_path: Path, config: TaskConfig) -> dict[str, Any]:
         "last_train_loss": last_loss,
         "python": sys.version.split()[0],
         "torch": torch.__version__,
+        "device": str(device),
+        "mps_available": torch.backends.mps.is_available(),
         "platform": platform.platform(),
         "machine": platform.machine(),
         "date_utc": datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),

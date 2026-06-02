@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import tempfile
 from pathlib import Path
+from unittest.mock import patch
 
 import torch
 
 from data import build_batch_indices, build_eval_dataset, build_student, build_teacher, build_train_dataset
-from run_eval import import_submission, run_benchmark
+from run_eval import import_submission, run_benchmark, select_device
 from task import CONFIG, TaskConfig
 
 
@@ -45,6 +46,16 @@ def test_submission_must_be_optimizer_subclass() -> None:
             raise AssertionError("bad submission should fail")
 
 
+def test_select_device_prefers_mps_when_available() -> None:
+    with patch.object(torch.backends.mps, "is_available", return_value=True):
+        assert select_device().type == "mps"
+
+
+def test_select_device_falls_back_to_cpu() -> None:
+    with patch.object(torch.backends.mps, "is_available", return_value=False):
+        assert select_device().type == "cpu"
+
+
 def test_baseline_runs_on_tiny_config() -> None:
     config = TaskConfig(
         embed_dim=8,
@@ -64,6 +75,7 @@ def test_baseline_runs_on_tiny_config() -> None:
     assert result["initial_weight_mse"] >= 0.0
     assert result["final_eval_mse"] >= 0.0
     assert result["final_weight_mse"] >= 0.0
+    assert result["device"] in {"cpu", "mps"}
 
 
 if __name__ == "__main__":
