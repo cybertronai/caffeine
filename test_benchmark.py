@@ -66,15 +66,13 @@ def test_baseline_runs_on_tiny_config() -> None:
         max_steps=2,
         eval_every=1,
         target_mse=0.0,
-        target_relative_weight_error=0.0,
     )
     result = run_benchmark(Path("submissions/adamw/submission.py"), config)
     assert result["status"] == "fail"
     assert result["steps"] == 2
     assert result["initial_eval_mse"] >= 0.0
-    assert result["initial_relative_weight_error"] >= 0.0
     assert result["final_eval_mse"] >= 0.0
-    assert result["final_relative_weight_error"] >= 0.0
+    assert result["best_eval_mse"] >= 0.0
     assert result["device"] in {"cpu", "mps"}
 
 
