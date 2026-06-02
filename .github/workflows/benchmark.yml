@@ -1,0 +1,74 @@
+name: benchmark
+
+on:
+  workflow_dispatch:
+    inputs:
+      submission:
+        description: Path to submission.py
+        required: false
+        default: submissions/adamw/submission.py
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  benchmark:
+    runs-on: macos-15
+    timeout-minutes: 15
+    env:
+      PYTHONHASHSEED: "0"
+      OMP_NUM_THREADS: "1"
+      MKL_NUM_THREADS: "1"
+      VECLIB_MAXIMUM_THREADS: "1"
+      SUBMISSION: ${{ github.event_name == 'workflow_dispatch' && inputs.submission || 'submissions/adamw/submission.py' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          architecture: arm64
+          cache: pip
+
+      - name: Verify runner
+        run: |
+          set -euxo pipefail
+          uname -m
+          sysctl -n machdep.cpu.brand_string || true
+          python - <<'PY'
+          import platform
+          assert platform.machine() == "arm64", platform.machine()
+          print("machine:", platform.machine())
+          PY
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install torch
+
+      - name: Run tests
+        run: python test_benchmark.py
+
+      - name: Run benchmark
+        run: |
+          python run_eval.py --require-arm64 --submission "$SUBMISSION" --results-json artifacts/result.json
+
+      - name: Summarize
+        if: always()
+        run: |
+          if [ -f artifacts/result.json ]; then
+            {
+              echo '## caffeine benchmark result'
+              echo
+              echo '```json'
+              cat artifacts/result.json
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-result
+          path: artifacts/result.json
