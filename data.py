@@ -24,15 +24,8 @@ def build_model(seed: int, config: TaskConfig) -> VanillaSelfAttention:
     return VanillaSelfAttention(config.embed_dim)
 
 
-def initialize_teacher(model: VanillaSelfAttention, seed: int) -> None:
-    generator = torch.Generator(device="cpu").manual_seed(seed)
-    for parameter in model.parameters():
-        parameter.data.uniform_(-1.0, 1.0, generator=generator)
-
-
 def build_teacher(config: TaskConfig) -> VanillaSelfAttention:
-    model = VanillaSelfAttention(config.embed_dim)
-    initialize_teacher(model, config.teacher_seed)
+    model = build_model(config.teacher_seed, config)
     model.eval()
     for parameter in model.parameters():
         parameter.requires_grad_(False)
