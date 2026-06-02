@@ -28,7 +28,11 @@ jobs:
         with:
           python-version: "3.12"
           architecture: arm64
-          cache: pip
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
 
       - name: Verify runner
         run: |
@@ -42,16 +46,26 @@ jobs:
           PY
 
       - name: Install dependencies
+        run: uv sync --frozen
+
+      - name: Verify PyTorch device
         run: |
-          python -m pip install --upgrade pip
-          python -m pip install torch
+          uv run python - <<'PY'
+          import torch
+          from run_eval import select_device
+
+          print("torch:", torch.__version__)
+          print("mps built:", torch.backends.mps.is_built())
+          print("mps available:", torch.backends.mps.is_available())
+          print("selected device:", select_device())
+          PY
 
       - name: Run tests
-        run: python test_benchmark.py
+        run: uv run python test_benchmark.py
 
       - name: Run benchmark
         run: |
-          python run_eval.py --require-arm64 --submission "$SUBMISSION" --results-json artifacts/result.json
+          uv run python run_eval.py --require-arm64 --submission "$SUBMISSION" --results-json artifacts/result.json
 
       - name: Summarize
         if: always()

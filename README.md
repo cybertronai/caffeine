@@ -20,12 +20,14 @@ Task: design an optimizer that trains a fixed vanilla self-attention model to ma
 
 ## scoring
 
-Official v0 scoring is wall-clock time on GitHub Actions `macos-15` arm64. The harness stops at the first fixed evaluation checkpoint where parameter MSE against the deterministic teacher is at or below `target_weight_mse`; held-out output MSE is reported as a sanity metric, and submissions that miss the weight target within `max_steps` fail.
+Official v0 scoring is wall-clock time on GitHub Actions `macos-15` arm64. The harness uses MPS when available and falls back to CPU. It stops at the first fixed evaluation checkpoint where parameter MSE against the deterministic teacher is at or below `target_weight_mse`; held-out output MSE is reported as a sanity metric, and submissions that miss the weight target within `max_steps` fail.
 
 Run locally:
 
 ```bash
-python run_eval.py --submission submissions/adamw/submission.py --results-json result.json
+uv sync
+uv run python test_benchmark.py
+uv run python run_eval.py --submission submissions/adamw/submission.py --results-json result.json
 ```
 
 ## dataset
