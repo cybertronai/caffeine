@@ -15,7 +15,7 @@ DEFAULT_TOKEN_RECALL_RUN = RunConfig(
     eval_samples=4096,
     batch_size=256,
     max_steps=400,
-    eval_every=50,
+    eval_every=1,
 )
 
 
