@@ -5,11 +5,11 @@ from torch import nn
 
 
 class VanillaSelfAttention(nn.Module):
-    def __init__(self, embed_dim: int):
+    def __init__(self, embed_dim: int, num_heads: int = 1):
         super().__init__()
         self.attention = nn.MultiheadAttention(
             embed_dim=embed_dim,
-            num_heads=1,
+            num_heads=num_heads,
             batch_first=True,
         )
 
