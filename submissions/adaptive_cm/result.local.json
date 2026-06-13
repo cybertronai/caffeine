@@ -1,0 +1,22 @@
+{
+  "status": "fail",
+  "submission": "adaptive_cm",
+  "submission_path": "submissions/adaptive_cm/submission.py",
+  "duration_s": 12.609554124996066,
+  "total_duration_s": 12.609554124996066,
+  "steps": 400,
+  "max_steps": 400,
+  "eval_every": 100,
+  "initial_eval_mse": 1807.385009765625,
+  "final_eval_mse": 2.2706098556518555,
+  "best_eval_mse": 2.2706098556518555,
+  "target_mse": 4e-07,
+  "last_train_loss": 1.4908065795898438,
+  "python": "3.12.10",
+  "torch": "2.12.0",
+  "device": "mps",
+  "mps_available": true,
+  "platform": "macOS-26.5.1-arm64-arm-64bit",
+  "machine": "arm64",
+  "date_utc": "2026-06-11T22:57:19Z"
+}
