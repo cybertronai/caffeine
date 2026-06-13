@@ -7,6 +7,7 @@ from unittest.mock import patch
 import torch
 
 from data import build_batch_indices, build_eval_dataset, build_student, build_teacher, build_train_dataset
+from run_leaderboard import build_markdown, discover_submissions
 from run_eval import import_submission, run_benchmark, select_device
 from task import CONFIG, TaskConfig
 
@@ -75,16 +76,36 @@ def test_baseline_runs_on_tiny_config() -> None:
         eval_samples=64,
         batch_size=32,
         max_steps=2,
-        eval_every=1,
-        target_mse=0.0,
     )
     result = run_benchmark(Path("submissions/adamw/submission.py"), config)
-    assert result["status"] == "fail"
     assert result["steps"] == 2
+    assert result["max_steps"] == 2
+    assert result["train_samples"] == 128
+    assert result["eval_samples"] == 64
+    assert result["batch_size"] == 32
     assert result["initial_eval_mse"] >= 0.0
     assert result["final_eval_mse"] >= 0.0
-    assert result["best_eval_mse"] >= 0.0
+    assert result["training_wall_time_s"] >= 0.0
     assert result["device"] in {"cpu", "mps"}
+
+
+def test_leaderboard_discovers_submissions() -> None:
+    paths = discover_submissions(Path("submissions"))
+    assert Path("submissions/adamw/submission.py") in paths
+
+
+def test_leaderboard_markdown_uses_final_eval_mse() -> None:
+    markdown = build_markdown([
+        {
+            "submission": "example",
+            "final_eval_mse": 1.25,
+            "training_wall_time_s": 0.5,
+            "last_train_loss": 2.5,
+        }
+    ])
+    assert "Final Eval MSE" in markdown
+    assert "Training Wall Time" in markdown
+    assert "example" in markdown
 
 
 if __name__ == "__main__":

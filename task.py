@@ -11,8 +11,6 @@ class TaskConfig:
     eval_samples: int = 2048
     batch_size: int = 512
     max_steps: int = 400
-    eval_every: int = 100
-    target_mse: float = 4.0e-7
 
     teacher_seed: int = 1729
     student_seed: int = 314159

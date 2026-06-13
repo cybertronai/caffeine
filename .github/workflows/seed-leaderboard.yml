@@ -1,0 +1,135 @@
+name: seed leaderboard
+
+on:
+  workflow_dispatch:
+
+jobs:
+  discover:
+    runs-on: ubuntu-latest
+    outputs:
+      submissions: ${{ steps.discover.outputs.submissions }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: discover
+        name: Discover submissions
+        run: |
+          python - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          from pathlib import Path
+
+          submissions = [
+              {"name": path.parent.name, "path": str(path)}
+              for path in sorted(Path("submissions").glob("*/submission.py"))
+          ]
+          print(f"submissions={json.dumps(submissions)}")
+          PY
+
+  benchmark:
+    needs: discover
+    runs-on: macos-15
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        submission: ${{ fromJSON(needs.discover.outputs.submissions) }}
+    env:
+      PYTHONHASHSEED: "0"
+      OMP_NUM_THREADS: "1"
+      MKL_NUM_THREADS: "1"
+      VECLIB_MAXIMUM_THREADS: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          architecture: arm64
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Verify runner
+        run: |
+          set -euxo pipefail
+          uname -m
+          python - <<'PY'
+          import platform
+          assert platform.machine() == "arm64", platform.machine()
+          print("machine:", platform.machine())
+          PY
+
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      - name: Run benchmark
+        run: |
+          uv run python run_eval.py --require-arm64 --submission "${{ matrix.submission.path }}" --results-json "artifacts/${{ matrix.submission.name }}/result.json"
+
+      - name: Upload result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: result-${{ matrix.submission.name }}
+          path: artifacts/${{ matrix.submission.name }}/result.json
+
+  leaderboard:
+    needs: benchmark
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts/results
+          pattern: result-*
+
+      - name: Build leaderboard
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          result_paths = sorted(Path("artifacts/results").glob("**/result.json"))
+          results = [json.loads(path.read_text()) for path in result_paths]
+          results.sort(key=lambda result: (result["final_eval_mse"], result["training_wall_time_s"]))
+
+          payload = {
+              "ranked_by": ["final_eval_mse", "training_wall_time_s"],
+              "results": results,
+          }
+
+          lines = [
+              "# caffeine leaderboard seed results",
+              "",
+              "Ranked by final eval MSE. Wall time is training only.",
+              "",
+              "| Rank | Submission | Final Eval MSE | Training Wall Time (s) | Last Train Loss |",
+              "|---:|---|---:|---:|---:|",
+          ]
+          for rank, result in enumerate(results, start=1):
+              lines.append(
+                  f"| {rank} | `{result['submission']}` | "
+                  f"`{result['final_eval_mse']:.6g}` | "
+                  f"`{result['training_wall_time_s']:.3f}` | "
+                  f"`{result['last_train_loss']:.6g}` |"
+              )
+          lines.append("")
+
+          Path("artifacts").mkdir(exist_ok=True)
+          Path("artifacts/leaderboard.json").write_text(json.dumps(payload, indent=2) + "\n")
+          Path("artifacts/leaderboard.md").write_text("\n".join(lines))
+          PY
+
+      - name: Summarize
+        run: |
+          cat artifacts/leaderboard.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload leaderboard
+        uses: actions/upload-artifact@v4
+        with:
+          name: seed-leaderboard
+          path: |
+            artifacts/leaderboard.json
+            artifacts/leaderboard.md

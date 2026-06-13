@@ -5,7 +5,7 @@ on:
     inputs:
       submission:
         description: Path to submission.py
-        required: false
+        required: true
         default: submissions/adamw/submission.py
   pull_request:
   push:

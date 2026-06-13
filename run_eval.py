@@ -67,10 +67,6 @@ def run_benchmark(submission_path: Path, config: TaskConfig) -> dict[str, Any]:
     optimizer = optimizer_cls(model.parameters())
 
     initial_eval_mse = evaluate(model, eval_inputs, eval_targets)
-    best_eval_mse = initial_eval_mse
-    passed = initial_eval_mse <= config.target_mse
-    pass_step = 0 if passed else None
-    pass_duration_s = 0.0 if passed else None
 
     synchronize_device(device)
     start = time.perf_counter()
@@ -87,34 +83,22 @@ def run_benchmark(submission_path: Path, config: TaskConfig) -> dict[str, Any]:
         optimizer.step()
         last_loss = float(loss.item())
 
-        if step % config.eval_every == 0 or step == config.max_steps:
-            eval_mse = evaluate(model, eval_inputs, eval_targets)
-            best_eval_mse = min(best_eval_mse, eval_mse)
-            if eval_mse <= config.target_mse:
-                passed = True
-                pass_step = step
-                synchronize_device(device)
-                pass_duration_s = time.perf_counter() - start
-                break
-
     synchronize_device(device)
-    total_duration_s = time.perf_counter() - start
+    training_wall_time_s = time.perf_counter() - start
     final_eval_mse = evaluate(model, eval_inputs, eval_targets)
-    status = "pass" if passed else "fail"
 
     return {
-        "status": status,
         "submission": submission_path.parent.name if submission_path.name == "submission.py" else submission_path.stem,
         "submission_path": str(submission_path),
-        "duration_s": pass_duration_s if pass_duration_s is not None else total_duration_s,
-        "total_duration_s": total_duration_s,
-        "steps": pass_step if pass_step is not None else config.max_steps,
+        "training_wall_time_s": training_wall_time_s,
+        "duration_s": training_wall_time_s,
+        "steps": config.max_steps,
         "max_steps": config.max_steps,
-        "eval_every": config.eval_every,
+        "train_samples": config.train_samples,
+        "eval_samples": config.eval_samples,
+        "batch_size": config.batch_size,
         "initial_eval_mse": initial_eval_mse,
         "final_eval_mse": final_eval_mse,
-        "best_eval_mse": best_eval_mse,
-        "target_mse": config.target_mse,
         "last_train_loss": last_loss,
         "python": sys.version.split()[0],
         "torch": torch.__version__,
@@ -148,9 +132,6 @@ def main() -> None:
     if args.results_json is not None:
         args.results_json.parent.mkdir(parents=True, exist_ok=True)
         args.results_json.write_text(text)
-
-    if result["status"] != "pass":
-        raise SystemExit(2)
 
 
 if __name__ == "__main__":
