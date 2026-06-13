@@ -78,6 +78,7 @@ C_inv_max → 0.058, too conservative). Use fixed λ=1.0 for best results here.
 from __future__ import annotations
 
 import math
+from typing import Any
 
 import torch
 
@@ -248,7 +249,7 @@ class Submission(torch.optim.Optimizer):
         return group["lambda_reg"]
 
     @torch.no_grad()
-    def step(self, closure=None):
+    def step(self, closure=None) -> Any:
         loss = None
         if closure is not None:
             with torch.enable_grad():

@@ -32,12 +32,16 @@ sys.path.insert(0, str(Path(__file__).parent))
 from data import build_batch_indices, build_eval_dataset, build_student, build_teacher, build_train_dataset
 from task import CONFIG
 
+REFERENCE_MSE = 4.0e-7
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
 def _load(path: str):
     spec = importlib.util.spec_from_file_location("sub", path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"could not import submission: {path}")
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     return mod
@@ -97,7 +101,7 @@ def run_and_log(student, opt_factory, X_tr, Y_tr, X_ev, Y_ev, batch_idx,
     return log
 
 
-def print_log(name, log, target=CONFIG.target_mse):
+def print_log(name, log, target=REFERENCE_MSE):
     hdr = (f"{'step':>5}  {'MSE':>10}  "
            f"{'lam_nat':>9}  {'sv_min':>7}  {'C_inv_max':>9}")
     bar = "=" * len(hdr)
@@ -203,7 +207,7 @@ def section_small_teacher(device):
 
     print("\n--- Small-teacher summary ---")
     for name, mse in results.items():
-        flag = "  <-- PASS (< 4e-7)" if mse < CONFIG.target_mse else ""
+        flag = "  <-- below 4e-7 reference" if mse < REFERENCE_MSE else ""
         print(f"  {name:<45} final MSE = {mse:.3e}{flag}")
 
     return results
@@ -253,7 +257,7 @@ def section_lambda_sweep(device):
 def main():
     device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
     print(f"device={device}  d={CONFIG.embed_dim}  max_steps={CONFIG.max_steps}")
-    print(f"target_mse={CONFIG.target_mse:.1e}")
+    print("official scoring is fixed-step final eval MSE; 4e-7 is shown only as a historical reference")
 
     t0 = time.monotonic()
     section_standard(device)

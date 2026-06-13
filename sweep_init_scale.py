@@ -18,6 +18,9 @@ from data import build_student, build_train_dataset, build_eval_dataset, build_b
 from model import VanillaSelfAttention
 from task import CONFIG
 
+REFERENCE_MSE = 4.0e-7
+CHECKPOINT_EVERY = 100
+
 
 def build_teacher_alpha(alpha: float) -> VanillaSelfAttention:
     model = VanillaSelfAttention(CONFIG.embed_dim)
@@ -33,6 +36,8 @@ def build_teacher_alpha(alpha: float) -> VanillaSelfAttention:
 def _load_submission(path: str):
     import importlib.util
     spec = importlib.util.spec_from_file_location("sub", path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"could not import submission: {path}")
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     return mod
@@ -52,11 +57,11 @@ def run(make_opt, X_tr, Y_tr, X_ev, Y_ev, batch_idx, cosine_base_lr=None):
         opt.zero_grad(set_to_none=True)
         F.mse_loss(model(X_tr[idx]), Y_tr[idx]).backward()
         opt.step()
-        if step % CONFIG.eval_every == 0:
+        if step % CHECKPOINT_EVERY == 0:
             with torch.no_grad():
                 mse = F.mse_loss(model(X_ev), Y_ev).item()
             best = min(best, mse)
-            if mse <= CONFIG.target_mse and pass_step is None:
+            if mse <= REFERENCE_MSE and pass_step is None:
                 pass_step = step
     return best, pass_step
 
@@ -65,7 +70,6 @@ def main() -> None:
     device = torch.device("mps") if torch.backends.mps.is_available() else torch.device("cpu")
     print(f"device: {device}\n")
 
-    muon = _load_submission("submissions/muon/submission.py")
     cm   = _load_submission("submissions/comp_muon/submission.py")
 
     batch_idx = build_batch_indices(CONFIG).to(device)
@@ -74,7 +78,6 @@ def main() -> None:
 
     optimizers = [
         ("AdamW",     lambda p: torch.optim.AdamW(p, lr=1e-2, betas=(0.9, 0.99)), None),
-        ("Muon",      lambda p: muon.Submission(p, lr=0.05),                       None),
         ("CM cosine", lambda p: cm.Submission(p, lr=0.10),                         0.10),
     ]
 

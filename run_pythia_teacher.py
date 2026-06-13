@@ -20,6 +20,7 @@ import math
 import sys
 import time
 from pathlib import Path
+from typing import Any
 
 import torch
 import torch.nn.functional as F
@@ -28,6 +29,8 @@ sys.path.insert(0, str(Path(__file__).parent))
 from data import build_batch_indices, build_eval_dataset, build_student, build_train_dataset
 from model import VanillaSelfAttention
 from task import CONFIG
+
+REFERENCE_MSE = 4.0e-7
 
 
 # ---------------------------------------------------------------------------
@@ -50,7 +53,7 @@ def build_pythia_teacher(layer_idx: int, pythia=None) -> VanillaSelfAttention:
         pythia = _load_pythia()
     h = pythia.config.hidden_size  # 128
 
-    attn = pythia.gpt_neox.layers[layer_idx].attention
+    attn: Any = pythia.gpt_neox.layers[layer_idx].attention
     W_qkv = attn.query_key_value.weight.data.float().clone()  # [384, 128]
     b_qkv = attn.query_key_value.bias.data.float().clone()    # [384]
     W_o   = attn.dense.weight.data.float().clone()            # [128, 128]
@@ -91,6 +94,8 @@ def _pythia_spectral_summary(pythia) -> None:
 
 def _load(path: str):
     spec = importlib.util.spec_from_file_location("sub", path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"could not import submission: {path}")
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     return mod
@@ -144,7 +149,7 @@ def run_training(student, opt_factory, datasets, device, checkpoints, lam_for_st
     return log
 
 
-def print_log(name, log, target=CONFIG.target_mse):
+def print_log(name, log, target=REFERENCE_MSE):
     hdr = (f"{'step':>5}  {'MSE':>10}  "
            f"{'lam_nat':>9}  {'sv_min':>7}  {'C_inv_max':>9}")
     bar = "=" * len(hdr)
@@ -200,7 +205,7 @@ def section_layer_sweep(device, pythia, cm_mod, adapt_mod):
             log = run_training(s, make_opt, datasets, device, checkpoints, lam)
             mse = log[-1][1]
             row.append(mse)
-            flag = "*" if mse < CONFIG.target_mse else " "
+            flag = "*" if mse < REFERENCE_MSE else " "
             print(f"  {mse:>13.3e}{flag}", end="", flush=True)
 
         print()
