@@ -30,29 +30,14 @@ The leaderboard is ranked by:
 
 ## leaderboard
 
-Current fixed-step results, ranked by final eval MSE:
-
 | Rank | Submission | Author | Final Eval MSE | Training Wall Time (s) |
 |---:|---|---|---:|---:|
-| 1 | `adaptive_cm` | [@SethTS](https://github.com/SethTS) | `2.29481` | `8.989` |
-| 2 | `adamw` | [@cybertronai](https://github.com/cybertronai) | `58.3003` | `3.980` |
-| 3 | `comp_muon` | [@SethTS](https://github.com/SethTS) | `1266.47` | `9.557` |
+| 1 | `adaptive_cm` | [@SethTS](https://github.com/SethTS) | `2.34818` | `30.000` |
+| 2 | `adamw` | [@ab-10](https://github.com/ab-10) | `58.3003` | `24.359` |
+| 3 | `comp_muon` | [@SethTS](https://github.com/SethTS) | `1266.47` | `31.601` |
 
-Use the manual `seed leaderboard` workflow to evaluate all existing submissions independently when seeding this table. Future entries should come from the individual submission's `benchmark` workflow run.
-
-Run locally:
-
-```bash
-uv sync
-uv run python test_benchmark.py
-uv run python run_eval.py --submission submissions/adamw/submission.py --results-json result.json
-uv run python run_leaderboard.py --output-dir artifacts
-```
+_Evaluated on macos-15-arm64 GH Runner._
 
 ## dataset
 
 The harness deterministically initializes a teacher self-attention model, a student self-attention model, train inputs, eval inputs, and a fixed stochastic batch order from public seeds in `task.py`. Train and eval targets are teacher outputs on those inputs. The default task uses `8192` train samples, `2048` eval samples, batch size `512`, and `400` training steps.
-
-## model architecture
-
-Model: single-head vanilla self-attention via `torch.nn.MultiheadAttention`.
