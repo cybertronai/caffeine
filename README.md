@@ -11,6 +11,7 @@ Task: design an optimizer that trains a fixed vanilla self-attention model to ma
 
 1. dataset and train/val/eval splits
 2. model architecture
+3. training step budget
 
 ## submission contract
 
@@ -20,20 +21,23 @@ Task: design an optimizer that trains a fixed vanilla self-attention model to ma
 
 ## scoring
 
-Official v0 scoring is wall-clock time on GitHub Actions `macos-15` arm64. The harness uses MPS when available and falls back to CPU. It stops at the first fixed evaluation checkpoint where held-out output MSE is at or below `target_mse`; submissions that miss the MSE target within `max_steps` fail.
+Official v0 scoring runs every submission for the fixed `max_steps` budget in `task.py`, then ranks by held-out final eval MSE. Training-only wall time is reported as a secondary metric. Official leaderboard entries should be measured with the GitHub Actions `benchmark` workflow on `macos-15` arm64.
 
-Run locally:
+The leaderboard is ranked by:
 
-```bash
-uv sync
-uv run python test_benchmark.py
-uv run python run_eval.py --submission submissions/adamw/submission.py --results-json result.json
-```
+1. lower `final_eval_mse`
+2. lower `training_wall_time_s` as a tiebreaker
+
+## leaderboard
+
+| Rank | Submission | Author | Final Eval MSE | Training Wall Time (s) |
+|---:|---|---|---:|---:|
+| 1 | `adaptive_cm` | [@SethTS](https://github.com/SethTS) | `2.34818` | `30.000` |
+| 2 | `adamw` | [@ab-10](https://github.com/ab-10) | `58.3003` | `24.359` |
+| 3 | `comp_muon` | [@SethTS](https://github.com/SethTS) | `1266.47` | `31.601` |
+
+_Evaluated on macos-15-arm64 GH Runner._
 
 ## dataset
 
-The harness deterministically initializes a teacher self-attention model, a student self-attention model, train inputs, eval inputs, and a fixed stochastic batch order from public seeds in `task.py`. Train and eval targets are teacher outputs on those inputs.
-
-## model architecture
-
-Model: single-head vanilla self-attention via `torch.nn.MultiheadAttention`.
+The harness deterministically initializes a teacher self-attention model, a student self-attention model, train inputs, eval inputs, and a fixed stochastic batch order from public seeds in `task.py`. Train and eval targets are teacher outputs on those inputs. The default task uses `8192` train samples, `2048` eval samples, batch size `512`, and `400` training steps.

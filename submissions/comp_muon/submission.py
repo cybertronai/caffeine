@@ -24,6 +24,8 @@ Reference: https://github.com/tilde-research/comp-muon-release
 """
 from __future__ import annotations
 
+from typing import Any
+
 import torch
 
 
@@ -176,7 +178,7 @@ class Submission(torch.optim.Optimizer):
         self._step = 0
 
     @torch.no_grad()
-    def step(self, closure=None):
+    def step(self, closure=None) -> Any:
         loss = None
         if closure is not None:
             with torch.enable_grad():
