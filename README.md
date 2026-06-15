@@ -11,10 +11,59 @@ Task: design an optimizer that trains a fixed vanilla self-attention model on a 
 | Track | Objective | Target |
 | --- | --- | --- |
 | `random_teacher` | Train a model to match the outputs of another randomly initialized hidden model (i.e. teacher). | final eval MSE |
-| `single_ar` | Opaque single-query associative recall: `8` pair tokens + `1` query token -> value class. | eval accuracy >= `0.99` |
-| `mqar` | Opaque multi-query associative recall: `8` pair tokens + `8` query tokens -> value classes. | eval accuracy >= `0.99` |
+| `single_ar` | Each example is a short list of key/value binding tokens followed by one query token. The model must use the query to find the matching binding and predict its value. | eval accuracy >= `0.99` |
+| `mqar` | Each example has the same kind of key/value binding list, followed by several query tokens. The model must answer all lookups in the sequence, reusing the same learned recall mechanism. | eval accuracy >= `0.99` |
 
-`mqar` is inspired by the multi-query associative recall task from
+### `random_teacher`
+
+This is the original caffeine task. The harness creates two single-head
+self-attention models:
+
+1. a frozen teacher with deterministic random weights
+2. a student with deterministic random initialization
+
+Random matrix sequences are passed through the teacher to create regression
+targets. The submitted optimizer trains the student to match those teacher
+outputs. This track is useful as a pure optimizer stress test because the target
+function is fixed and generated entirely by another attention layer.
+
+### `single_ar`
+
+This is a small next-token associative-recall task. Each example contains eight
+context tokens followed by one query token:
+
+```text
+[pair_1, pair_2, ..., pair_8, query_key] -> value
+```
+
+For example, if the hidden bindings are `A -> red`, `B -> blue`, and
+`C -> green`, then a query for `B` should produce `blue`. In the actual
+benchmark these symbols are opaque token IDs, not readable strings.
+
+Internally, each `pair_i` represents a key/value binding, and `query_key` asks
+for the value associated with one of those keys. Submissions are not given that
+internal key/value decomposition. They only see gradients through the model's
+token embeddings and readout weights.
+
+The model must learn to attend from the query token to the matching context
+token and classify the associated value.
+
+### `mqar`
+
+This is the multi-query version of associative recall. Each example contains the
+same eight context pair tokens, but now has eight query tokens:
+
+```text
+[pair_1, ..., pair_8, query_1, ..., query_8] -> [value_1, ..., value_8]
+```
+
+For example, with hidden bindings `A -> red`, `B -> blue`, and `C -> green`,
+the queries `[C, A, B]` should produce `[green, red, blue]`. The task tests
+whether one attention layer can reuse the same lookup rule several times in a
+single example.
+
+The same learned binding mechanism has to answer several lookups in one
+sequence. This track is inspired by the multi-query associative recall task from
 [Zoology: Measuring and Improving Recall in Efficient Language Models](https://arxiv.org/abs/2312.04927).
 
 The benchmark supports multiple tracks through `run_eval.py --track`:
