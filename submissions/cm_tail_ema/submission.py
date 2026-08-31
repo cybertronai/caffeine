@@ -1,9 +1,10 @@
-"""CM optimizer: lognormal LR schedule + tail floor + late QK boost + EMA finish.
+"""CM optimizer with a function-preserving gauge balance and tuned tail.
 
 Same core as adaptive_cm (whitened matrix-sign updates for Q,K,V,O with
 Gram-root preconditioning, AdamW for biases), plus three tail changes:
 
 - lr_floor: hold a small constant LR once the lognormal tail decays below it.
+- balance_step: canonicalize the Q/K and V/O gauges once at step 270.
 - qk_tail: ramp up the Q,K step size over the last quarter of training.
 - lam_end: ramp the Gram-root regularization down over the last 100 steps.
 - Polyak EMA over the final stretch, copied into the params at max_steps.
@@ -84,8 +85,9 @@ class Submission(torch.optim.Optimizer):
         lognorm_shift: float = 1.0,
         sched_T: int = 430,
         lr_floor: float = 0.002,
-        qk_tail: float = 1.25,
+        qk_tail: float = 0.75,
         qk_tail_start: int = 300,
+        balance_step: int = 270,
         ema_start: int = 325,
         ema_decay: float = 0.96,
         lam_end: float = 0.01,
@@ -99,6 +101,7 @@ class Submission(torch.optim.Optimizer):
             max_steps=max_steps, peak_step=peak_step, lognorm_sigma=lognorm_sigma,
             lognorm_shift=lognorm_shift, sched_T=sched_T, lr_floor=lr_floor,
             qk_tail=qk_tail, qk_tail_start=qk_tail_start,
+            balance_step=balance_step,
             ema_start=ema_start, ema_decay=ema_decay, lam_end=lam_end,
             adamw_lr=adamw_lr, adamw_betas=adamw_betas, adamw_eps=adamw_eps,
         )
@@ -221,4 +224,76 @@ class Submission(torch.optim.Optimizer):
                     if key in self._ema:
                         p.data.copy_(self._ema[key])
 
+            if self._step == group["balance_step"]:
+                self._balance_attention_gauges(group)
+
         return loss
+
+    @torch.no_grad()
+    def _balance_attention_gauges(self, group) -> None:
+        """Put both matrix products in balanced SVD gauges.
+
+        Attention depends on Q/K and V/O through their matrix products, not
+        the individual factors.  This refactorization leaves the model's
+        function unchanged while restoring well-conditioned coordinates for
+        the remaining optimizer steps.
+        """
+        in_proj = out_w = None
+        for p in group["params"]:
+            if p.ndim == 2 and p.shape[0] == 3 * p.shape[1]:
+                in_proj = p
+            elif p.ndim == 2 and p.shape[0] == p.shape[1]:
+                out_w = p
+        if in_proj is None or out_w is None:
+            return
+
+        d = out_w.shape[0]
+        in_bias = next(
+            (p for p in group["params"] if p.ndim == 1 and p.numel() == 3 * d),
+            None,
+        )
+        out_bias = next(
+            (p for p in group["params"] if p.ndim == 1 and p.numel() == d),
+            None,
+        )
+        if in_bias is None or out_bias is None:
+            return
+
+        WQ = in_proj.data[:d].float().cpu()
+        WK = in_proj.data[d:2 * d].float().cpu()
+        WV = in_proj.data[2 * d:].float().cpu()
+        WO = out_w.data.float().cpu()
+        bq = in_bias.data[:d].float().cpu()
+        bv = in_bias.data[2 * d:].float().cpu()
+        bo = out_bias.data.float().cpu()
+
+        # logits = x (WQ.T @ WK) x.T + 1 (bq @ WK) x.T, modulo
+        # row-wise softmax constants.
+        U, singular, Vh = torch.linalg.svd(WQ.T @ WK, full_matrices=False)
+        root = singular.clamp_min(1e-12).sqrt()
+        WQ_new = root[:, None] * U.T
+        WK_new = root[:, None] * Vh
+        key_linear = bq @ WK
+        bq_new = torch.linalg.solve(WK_new.T, key_linear)
+
+        # output = x (WV.T @ WO.T) + bv @ WO.T + bo.
+        U, singular, Vh = torch.linalg.svd(WV.T @ WO.T, full_matrices=False)
+        root = singular.clamp_min(1e-12).sqrt()
+        WV_new = root[:, None] * U.T
+        WO_new = Vh.T * root[None, :]
+        bo_new = bv @ WO.T + bo
+
+        in_proj.data[:d].copy_(WQ_new.to(in_proj))
+        in_proj.data[d:2 * d].copy_(WK_new.to(in_proj))
+        in_proj.data[2 * d:].copy_(WV_new.to(in_proj))
+        out_w.data.copy_(WO_new.to(out_w))
+        in_bias.data[:d].copy_(bq_new.to(in_bias))
+        in_bias.data[d:2 * d].zero_()  # key bias is a softmax-row constant
+        in_bias.data[2 * d:].zero_()
+        out_bias.data.copy_(bo_new.to(out_bias))
+
+        # Stored momentum belongs to the old coordinates.
+        for state in self.state.values():
+            for value in state.values():
+                if isinstance(value, torch.Tensor):
+                    value.zero_()
