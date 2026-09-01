@@ -102,6 +102,8 @@ def test_baseline_runs_on_tiny_config() -> None:
     assert len(result["data_audit"]["batch_indices"]["sha256"]) == 64
     assert result["initial_eval_mse"] >= 0.0
     assert result["final_eval_mse"] >= 0.0
+    assert result["final_eval_accuracy"] is None
+    assert result["target_accuracy"] is None
     assert result["training_wall_time_s"] >= 0.0
     assert result["device"] in {"cpu", "mps"}
 
@@ -190,7 +192,9 @@ def assert_token_track_is_deterministic_and_runs(track_name: str) -> None:
 
     result = run_benchmark(Path("submissions/adamw/submission.py"), track)
     assert result["track"] == track_name
-    assert "final_eval_accuracy" in result
+    assert result["final_eval_mse"] is None
+    assert result["target_mse"] is None
+    assert result["final_eval_accuracy"] is not None
 
 
 if __name__ == "__main__":

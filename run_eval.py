@@ -74,9 +74,9 @@ def coerce_track(track_or_config: BenchmarkTrack | TaskConfig) -> BenchmarkTrack
     return track_or_config
 
 
-def finite_or_nan(metrics: dict[str, float], key: str) -> float:
+def finite_or_none(metrics: dict[str, float], key: str) -> float | None:
     value = metrics.get(key, float("nan"))
-    return value if math.isfinite(value) else float("nan")
+    return value if math.isfinite(value) else None
 
 
 def tensor_audit(tensor: torch.Tensor) -> dict[str, Any]:
@@ -152,6 +152,10 @@ def run_benchmark(submission_path: Path, track_or_config: BenchmarkTrack | TaskC
     synchronize_device(device)
     training_wall_time_s = time.perf_counter() - start
     final_metrics = track.evaluate(model, eval_inputs, eval_targets)
+    target_metrics = {
+        key: value if math.isfinite(value) else None
+        for key, value in track.target_metrics().items()
+    }
 
     return {
         "submission": submission_path.parent.name if submission_path.name == "submission.py" else submission_path.stem,
@@ -167,13 +171,13 @@ def run_benchmark(submission_path: Path, track_or_config: BenchmarkTrack | TaskC
         "eval_samples": run_config.eval_samples,
         "batch_size": run_config.batch_size,
         "data_audit": data_audit,
-        "initial_eval_mse": finite_or_nan(initial_metrics, "mse"),
-        "final_eval_mse": finite_or_nan(final_metrics, "mse"),
-        "best_eval_mse": finite_or_nan(best_metrics, "mse"),
-        "initial_eval_accuracy": finite_or_nan(initial_metrics, "accuracy"),
-        "final_eval_accuracy": finite_or_nan(final_metrics, "accuracy"),
-        "best_eval_accuracy": finite_or_nan(best_metrics, "accuracy"),
-        **track.target_metrics(),
+        "initial_eval_mse": finite_or_none(initial_metrics, "mse"),
+        "final_eval_mse": finite_or_none(final_metrics, "mse"),
+        "best_eval_mse": finite_or_none(best_metrics, "mse"),
+        "initial_eval_accuracy": finite_or_none(initial_metrics, "accuracy"),
+        "final_eval_accuracy": finite_or_none(final_metrics, "accuracy"),
+        "best_eval_accuracy": finite_or_none(best_metrics, "accuracy"),
+        **target_metrics,
         "last_train_loss": last_loss,
         "python": sys.version.split()[0],
         "torch": torch.__version__,
@@ -207,7 +211,7 @@ def main() -> None:
         raise SystemExit(f"official benchmark requires arm64, got {platform.machine()!r}")
 
     result = run_benchmark(args.submission, track_for_name(args.track))
-    text = json.dumps(result, indent=2) + "\n"
+    text = json.dumps(result, indent=2, allow_nan=False) + "\n"
     print(text, end="")
 
     if args.results_json is not None:
