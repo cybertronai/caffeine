@@ -111,6 +111,9 @@ def test_baseline_runs_on_tiny_config() -> None:
 def test_cm_tail_ema_balance_preserves_function_and_restarts_state() -> None:
     torch.manual_seed(1234)
     model = VanillaSelfAttention(embed_dim=8)
+    with torch.no_grad():
+        model.attention.in_proj_bias.normal_()
+        model.attention.out_proj.bias.normal_()
     optimizer_cls = import_submission(Path("submissions/cm_tail_ema/submission.py"))
     optimizer = optimizer_cls(model.parameters())
 
