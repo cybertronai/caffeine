@@ -92,10 +92,11 @@ The leaderboard is ranked by:
 
 | Rank | Submission | Author | Final Eval MSE | Training Wall Time (s) |
 |---:|---|---|---:|---:|
-| 1 | `direct_lion_curv_ns_shampoo_clean_slow_two_moments_avg_adaptive` | [@Hydral8](https://github.com/Hydral8) | `0.198420` | `13.493` |
-| 2 | `adaptive_cm` | [@SethTS](https://github.com/SethTS) | `2.34818` | `30.000` |
-| 3 | `adamw` | [@ab-10](https://github.com/ab-10) | `58.3003` | `24.359` |
-| 4 | `comp_muon` | [@SethTS](https://github.com/SethTS) | `1266.47` | `31.601` |
+| 1 | `cm_tail_ema` | [@npow](https://github.com/npow) | `0.0109174` | `35.729` |
+| 2 | `direct_lion_curv_ns_shampoo_clean_slow_two_moments_avg_adaptive` | [@Hydral8](https://github.com/Hydral8) | `0.198420` | `13.493` |
+| 3 | `adaptive_cm` | [@SethTS](https://github.com/SethTS) | `2.34818` | `30.000` |
+| 4 | `adamw` | [@ab-10](https://github.com/ab-10) | `58.3003` | `24.359` |
+| 5 | `comp_muon` | [@SethTS](https://github.com/SethTS) | `1266.47` | `31.601` |
 
 _Evaluated on macos-15-arm64 GH Runner._
 
@@ -109,3 +110,6 @@ uv run python run_eval.py --submission submissions/adamw/submission.py --results
 
 The `direct_lion_curv_ns_shampoo_clean_slow_two_moments_avg_adaptive`
 submission README includes a short optimizer writeup.
+
+The `cm_tail_ema` submission README includes its optimizer derivation and
+frozen-data audit.
