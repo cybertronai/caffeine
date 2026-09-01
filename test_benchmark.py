@@ -97,10 +97,44 @@ def test_baseline_runs_on_tiny_config() -> None:
     assert result["train_samples"] == 128
     assert result["eval_samples"] == 64
     assert result["batch_size"] == 32
+    assert result["data_audit"]["train_inputs"]["shape"] == [128, 4, 8]
+    assert result["data_audit"]["train_targets"]["shape"] == [128, 4, 8]
+    assert len(result["data_audit"]["batch_indices"]["sha256"]) == 64
     assert result["initial_eval_mse"] >= 0.0
     assert result["final_eval_mse"] >= 0.0
     assert result["training_wall_time_s"] >= 0.0
     assert result["device"] in {"cpu", "mps"}
+
+
+def test_cm_tail_ema_balance_preserves_function_and_restarts_state() -> None:
+    torch.manual_seed(1234)
+    model = VanillaSelfAttention(embed_dim=8)
+    optimizer_cls = import_submission(Path("submissions/cm_tail_ema/submission.py"))
+    optimizer = optimizer_cls(model.parameters())
+
+    in_weight = model.attention.in_proj_weight
+    out_weight = model.attention.out_proj.weight
+    optimizer.state[in_weight].update(momentum=torch.ones_like(in_weight))
+    optimizer.state[out_weight].update(momentum=torch.ones_like(out_weight))
+    for bias in (model.attention.in_proj_bias, model.attention.out_proj.bias):
+        optimizer.state[bias].update(
+            step=270,
+            m=torch.ones_like(bias),
+            v=torch.ones_like(bias),
+        )
+
+    inputs = torch.randn(7, 11, 8)
+    with torch.no_grad():
+        before = model(inputs)
+        optimizer._balance_attention_gauges(optimizer.param_groups[0])
+        after = model(inputs)
+
+    assert torch.mean((after - before) ** 2).item() < 1e-11
+    for state in optimizer.state.values():
+        assert state.get("step", 0) == 0
+        for value in state.values():
+            if isinstance(value, torch.Tensor):
+                assert torch.count_nonzero(value).item() == 0
 
 
 def test_leaderboard_discovers_submissions() -> None:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import importlib.util
 import json
 import math
@@ -78,6 +79,21 @@ def finite_or_nan(metrics: dict[str, float], key: str) -> float:
     return value if math.isfinite(value) else float("nan")
 
 
+def tensor_audit(tensor: torch.Tensor) -> dict[str, Any]:
+    contiguous = tensor.detach().cpu().contiguous()
+    byte_view = contiguous.view(torch.uint8).reshape(-1)
+    digest = hashlib.sha256()
+    chunk_bytes = 8 * 1024 * 1024
+    for offset in range(0, byte_view.numel(), chunk_bytes):
+        chunk = byte_view[offset : offset + chunk_bytes]
+        digest.update(memoryview(chunk.numpy()))
+    return {
+        "shape": list(contiguous.shape),
+        "dtype": str(contiguous.dtype),
+        "sha256": digest.hexdigest(),
+    }
+
+
 def run_benchmark(submission_path: Path, track_or_config: BenchmarkTrack | TaskConfig) -> dict[str, Any]:
     optimizer_cls = import_submission(submission_path)
     track = coerce_track(track_or_config)
@@ -87,7 +103,18 @@ def run_benchmark(submission_path: Path, track_or_config: BenchmarkTrack | TaskC
     device = select_device()
     train_data = track.build_train_dataset()
     eval_data = track.build_eval_dataset()
-    batch_indices = track.build_batch_indices().to(device)
+    batch_indices_cpu = track.build_batch_indices()
+    data_audit = {
+        "hash_algorithm": "sha256",
+        "serialization": "C-contiguous tensor bytes in native byte order",
+        "byte_order": sys.byteorder,
+        "train_inputs": tensor_audit(train_data.inputs),
+        "train_targets": tensor_audit(train_data.targets),
+        "eval_inputs": tensor_audit(eval_data.inputs),
+        "eval_targets": tensor_audit(eval_data.targets),
+        "batch_indices": tensor_audit(batch_indices_cpu),
+    }
+    batch_indices = batch_indices_cpu.to(device)
     train_inputs = train_data.inputs.to(device)
     train_targets = train_data.targets.to(device)
     eval_inputs = eval_data.inputs.to(device)
@@ -139,6 +166,7 @@ def run_benchmark(submission_path: Path, track_or_config: BenchmarkTrack | TaskC
         "train_samples": run_config.train_samples,
         "eval_samples": run_config.eval_samples,
         "batch_size": run_config.batch_size,
+        "data_audit": data_audit,
         "initial_eval_mse": finite_or_nan(initial_metrics, "mse"),
         "final_eval_mse": finite_or_nan(final_metrics, "mse"),
         "best_eval_mse": finite_or_nan(best_metrics, "mse"),

@@ -20,9 +20,41 @@ jobs:
       OMP_NUM_THREADS: "1"
       MKL_NUM_THREADS: "1"
       VECLIB_MAXIMUM_THREADS: "1"
-      SUBMISSION: ${{ github.event_name == 'workflow_dispatch' && inputs.submission || 'submissions/adamw/submission.py' }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve benchmark submission
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          MANUAL_SUBMISSION: ${{ inputs.submission }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          submission="submissions/adamw/submission.py"
+
+          if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
+            submission="$MANUAL_SUBMISSION"
+          elif [[ "$EVENT_NAME" == "pull_request" ]]; then
+            changed_submissions=$(git diff --name-only --diff-filter=AM \
+              "$BASE_SHA" "$HEAD_SHA" -- 'submissions/*/submission.py')
+            count=$(printf '%s\n' "$changed_submissions" | awk 'NF' | wc -l | tr -d ' ')
+            if [[ "$count" -eq 1 ]]; then
+              submission="$changed_submissions"
+            elif [[ "$count" -gt 1 ]]; then
+              echo "PR changes multiple submissions; benchmark them with workflow_dispatch." >&2
+              exit 1
+            fi
+          fi
+
+          if [[ ! -f "$submission" ]]; then
+            echo "submission not found: $submission" >&2
+            exit 1
+          fi
+          echo "Benchmark submission: $submission"
+          printf 'SUBMISSION=%s\n' "$submission" >> "$GITHUB_ENV"
 
       - uses: actions/setup-python@v5
         with:

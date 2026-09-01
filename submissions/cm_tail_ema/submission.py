@@ -1,7 +1,7 @@
 """CM optimizer with a function-preserving gauge balance and tuned tail.
 
 Same core as adaptive_cm (whitened matrix-sign updates for Q,K,V,O with
-Gram-root preconditioning, AdamW for biases), plus three tail changes:
+Gram-root preconditioning, AdamW for biases), plus five tail mechanisms:
 
 - lr_floor: hold a small constant LR once the lognormal tail decays below it.
 - balance_step: canonicalize the Q/K and V/O gauges once at step 270.
@@ -292,8 +292,11 @@ class Submission(torch.optim.Optimizer):
         in_bias.data[2 * d:].zero_()
         out_bias.data.copy_(bo_new.to(out_bias))
 
-        # Stored momentum belongs to the old coordinates.
+        # All stored optimizer state belongs to the old coordinates. Reset
+        # both tensor moments and Adam's bias-correction counter.
         for state in self.state.values():
             for value in state.values():
                 if isinstance(value, torch.Tensor):
                     value.zero_()
+            if "step" in state:
+                state["step"] = 0
