@@ -1,80 +1,80 @@
 # CM + Gauge Balance + Tail Schedule (`cm_tail_ema`)
 
-**Submission: `cm_tail_ema`** — the adaptive-CM core, a one-time
-function-preserving attention gauge balance, and a retuned training tail.
-Official `random_teacher` MSE@400: **0.0112375** on macOS 15 arm64/MPS.
+`cm_tail_ema` combines the `adaptive_cm` update with a one-time,
+function-preserving attention gauge balance and a tuned training tail. Its
+official `random_teacher` MSE at step 400 is **0.0109174000** on macOS 15
+arm64/MPS.
 
----
+## Optimizer
 
-## Base
+The base update is partner-whitened matrix sign for the Q, K, V, and O weight
+blocks, with λ=1.0 Gram regularization and heavy-ball momentum. Biases use
+Adam. A shifted lognormal learning-rate schedule peaks at step 40.
 
-Same update rule as `adaptive_cm`: partner-whitened matrix-sign (Newton–Schulz)
-updates for the Q,K,V,O factors with λ=1.0 Gram regularization, heavy-ball
-momentum (0.95), AdamW for biases, and a shifted lognormal LR schedule peaking
-at step 40.
+The tail adds five mechanisms:
 
-## What changed and why
+1. An LR floor of 0.002 keeps the final updates from vanishing.
+2. At step 270, Q/K and V/O are refactored into balanced SVD gauges.
+3. Q/K updates ramp from 1× to 1.75× between steps 300 and 400.
+4. Gram regularization ramps from 1.0 to 0.01 over the final 100 steps.
+5. An EMA starts at step 325 and is copied into the model at step 400.
 
-1. **LR floor (0.002).** The stock lognormal tail decays to ~1e-4 by step 400.
-   A per-step line-search probe on a held-out proxy showed the optimal LR in the
-   last 100 steps is 2–20× larger than the scheduled value, so the tail is
-   step-size-limited. Holding `lr = max(lognorm, 0.002)` from ~step 330 onward
-   recovers most of that headroom.
+The numerical settings came from exploratory deterministic CPU and MPS
+sweeps. The quality claim below uses only the frozen, audited official runs.
 
-2. **Exact gauge balance (step 270).** Attention depends on Q/K and V/O
-   through the products `W_Q.T @ W_K` and `W_V.T @ W_O.T`. At step 270 those
-   products are refactored into balanced SVD factors. The query/value/output
-   biases are transformed at the same time, so the model function is preserved
-   to floating-point precision (measured output MSE `2.26e-14`). Momentum is
-   restarted because its coordinates belong to the old gauge. This lowers the
-   official MPS result from `0.0247666` to the `0.0126` range before retuning.
+## Function-preserving gauge balance
 
-3. **Late Q,K boost (`qk_tail=0.75` from step 300).** The value/output blocks
-   converge early (an exact ALS re-solve of W_V, W_O gains only ~2%); the
-   residual error is almost entirely in the attention logits, i.e. in
-   M = W_Qᵀ W_K. Ramping the Q,K step size up to 1.75× over the last quarter
-   of training keeps the routing converging after V,O are done.
+For PyTorch's weight layout, attention logits depend on the Q/K product
+`W_Q.T @ W_K`. The optimizer replaces its factors with
 
-4. **λ decay (`lam_end=0.01`).** The Gram-root Tikhonov λ is ramped 1.0 → 0.01
-   over the last 100 steps. Late in training the weights are well-conditioned
-   (σ_min no longer collapsing), so the whitening cap `1/√λ` is the binding
-   constraint, not stability. The response is smooth and monotone —
-   λ_end ∈ {1.0, 0.3, 0.1, 0.05, 0.03, 0.01} gives
-   {0.0206, 0.0186, 0.0177, 0.0175, 0.0174, 0.0163} — not a chaotic artifact.
+```text
+W_Q_new = sqrt(S) @ U.T
+W_K_new = sqrt(S) @ Vh
+```
 
-5. **Polyak EMA finish (start 325, decay 0.96).** Parameters are averaged over
-   the last 75 steps and the EMA is copied into the model at step 400. The
-   final-iterate MSE of this family is jagged in the knobs (routing flips in
-   the last 50 steps); EMA over the constant-LR tail damps that oscillation.
+where `U @ S @ Vh = W_Q.T @ W_K`. It also solves for a new query bias that
+preserves `b_q @ W_K`. The key bias is set to zero because its contribution is
+a row-wise softmax constant.
 
-## Sweep context
+The value/output path depends on `W_V.T @ W_O.T` and is balanced in the same
+way. The value-bias contribution is absorbed into the output bias before the
+value bias is zeroed. The regression test requires output MSE below `1e-11`
+across the refactor.
 
-The tail package was selected from ~140 deterministic CPU configurations. The
-gauge change was then screened locally and refined with official arm64/MPS
-workflow matrices. Three materially different refinements independently beat
-the 50% threshold:
+All matrix momentum, bias moments, and Adam bias-correction counters are reset
+after the coordinate change. An earlier PR revision reset the moment tensors
+but accidentally retained the Adam counters; its result is superseded by the
+audited result below.
 
-| Variant | Official final MSE | Reduction vs pre-gauge MPS |
-|---|---:|---:|
-| gauge + `qk_tail=0.75` | **0.0112375** | **54.63%** |
-| gauge + `qk_tail=1.00` | 0.0119419 | 51.78% |
-| gauge + matrix-state reset only | 0.0121643 | 50.88% |
+## Audited official result
 
-The comparison point is this submission before gauge balancing, measured by
-the same workflow at `0.0247666`. The 50% cutoff is `0.0123833`.
+Both rows used Python 3.12.10, PyTorch 2.12.0, macOS 15.7.7 arm64/MPS, 8,192
+training samples, 2,048 evaluation samples, 400 batches of 512, and identical
+SHA-256 hashes for every input, target, and batch-index tensor.
 
-Notable dead ends: in-optimizer Newton/HVP steps (finite-difference HVP
-calibration has 70–100% relative error from batch noise), exact M-space polar
-updates via square inverses (diverges), SGLD-style noise injection, momentum
-ramps in either direction, cyclic/restart schedules, gradient accumulation,
-final logit upscaling.
+| Package | Final eval MSE | Training time | Official run |
+|---|---:|---:|---|
+| Pre-gauge tail package (`qk_tail=1.25`) | 0.0247666091 | 36.72 s | [baseline audit](https://github.com/npow/caffeine/actions/runs/33454278926) |
+| Gauge-balanced package (`qk_tail=0.75`) | **0.0109174000** | 35.73 s | [current artifact](https://github.com/npow/caffeine/actions/runs/33454022031) |
 
-## Official verification
+This is a **55.92% MSE reduction** for the complete package change. It should
+not be interpreted as an isolated estimate of the gauge operation: the final
+package also retunes the Q/K tail and correctly restarts all transformed
+optimizer state.
 
-The packaged file was rerun independently by the repository's `benchmark`
-workflow, including the complete test suite and arm64 assertion. It reproduced
-the winning matrix result exactly at `0.011237496510148048`; the artifact is
-committed as `result.macos-arm64.json`.
+The corrected optimizer independently reproduced `0.010917400009930134` in
+the automatic PR run and a [manual workflow run](https://github.com/npow/caffeine/actions/runs/33453755531).
+The strict JSON artifact from the automatic run is committed as
+`result.macos-arm64.json`, including shapes, denominators, and full tensor
+hashes.
+
+The artifact's `status` is `fail` because the benchmark's absolute target is
+`4e-7`; leaderboard ranking is by lower final MSE, so this remains a valid
+quality improvement without being a target pass.
+
+Teacher-generated target hashes can vary across numerical platforms. Results
+should therefore be compared only when the audit hashes match; the two
+official rows above do.
 
 ## Reproduce
 

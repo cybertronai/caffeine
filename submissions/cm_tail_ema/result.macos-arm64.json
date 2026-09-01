@@ -3,28 +3,77 @@
   "submission_path": "submissions/cm_tail_ema/submission.py",
   "track": "random_teacher",
   "status": "fail",
-  "training_wall_time_s": 45.30456200000003,
-  "duration_s": 45.30456200000003,
+  "training_wall_time_s": 35.72924666599988,
+  "duration_s": 35.72924666599988,
   "steps": 400,
   "max_steps": 400,
   "eval_every": 100,
   "train_samples": 8192,
   "eval_samples": 2048,
   "batch_size": 512,
+  "data_audit": {
+    "hash_algorithm": "sha256",
+    "serialization": "C-contiguous tensor bytes in native byte order",
+    "byte_order": "little",
+    "train_inputs": {
+      "shape": [
+        8192,
+        64,
+        128
+      ],
+      "dtype": "torch.float32",
+      "sha256": "eebd99f28afe2cea6a2fc6ebafa93a230b2223f620d46cd5c67435a98eb5b772"
+    },
+    "train_targets": {
+      "shape": [
+        8192,
+        64,
+        128
+      ],
+      "dtype": "torch.float32",
+      "sha256": "5c232b4ff5b0e91667c8cd1b08aecd213d4b48c93ca84bf3279ffd760596de60"
+    },
+    "eval_inputs": {
+      "shape": [
+        2048,
+        64,
+        128
+      ],
+      "dtype": "torch.float32",
+      "sha256": "4209298cbfdeab2151da33f57f23b27af472b3b14eb3c706d1ae02d7d82b8eac"
+    },
+    "eval_targets": {
+      "shape": [
+        2048,
+        64,
+        128
+      ],
+      "dtype": "torch.float32",
+      "sha256": "750f6fc504dba708cfe71dc9194f4ae0f6bf313c50c4f55079dc1087f0d3e360"
+    },
+    "batch_indices": {
+      "shape": [
+        400,
+        512
+      ],
+      "dtype": "torch.int64",
+      "sha256": "c892f1f997fdf8341e8497df57acf655f97f9cdcdaba154eecd35d03c7c4d5dd"
+    }
+  },
   "initial_eval_mse": 1807.385009765625,
-  "final_eval_mse": 0.011237496510148048,
-  "best_eval_mse": 0.011237496510148048,
+  "final_eval_mse": 0.010917400009930134,
+  "best_eval_mse": 0.010917400009930134,
   "initial_eval_accuracy": null,
   "final_eval_accuracy": null,
   "best_eval_accuracy": null,
-  "target_mse": 4e-7,
+  "target_mse": 4e-07,
   "target_accuracy": null,
-  "last_train_loss": 0.018831580877304077,
+  "last_train_loss": 0.01876215822994709,
   "python": "3.12.10",
   "torch": "2.12.0",
   "device": "mps",
   "mps_available": true,
   "platform": "macOS-15.7.7-arm64-arm-64bit",
   "machine": "arm64",
-  "date_utc": "2026-08-31T17:32:58Z"
+  "date_utc": "2026-09-01T00:17:07Z"
 }
