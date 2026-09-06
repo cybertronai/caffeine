@@ -10,8 +10,10 @@ This is standard Tikhonov regularisation of the Gram matrix W_K^T W_K. In the
 usual Tikhonov setting, λ is chosen to be small — it just prevents numerical
 blow-up near zero eigenvalues, and smaller λ means a more faithful inversion.
 
-Here the optimal λ is 1.0, which is large. The reason is structural, not
-numerical: the GL(d) gauge symmetry of attention forces σ_min → 0.
+Here λ must be order one, which is large. The reason is structural, not
+numerical: the GL(d) gauge symmetry of attention forces σ_min → 0. The
+original cosine-schedule sweep established λ=1.0 as a stable choice; a paired
+ablation with the current log-normal schedule favors λ=0.75.
 
 == The spectral collapse problem ==
 
@@ -25,9 +27,9 @@ The Tikhonov amplification ceiling is therefore:
     C_inv_max = 1/√(σ_min² + λ)  →  1/√λ  as  σ_min → 0  (always, structurally)
 
 With standard λ=0.01, the ceiling is 1/√0.01 = 10: every update step amplifies
-the degenerate directions 10×. With λ=1.0, the ceiling is 1.0: degenerate directions
-receive no net amplification. The gauge orbit makes the difference between these
-two choices catastrophic rather than minor.
+the degenerate directions 10×. With λ=0.75, the ceiling is about 1.155, so
+degenerate directions receive little amplification. The gauge orbit makes the
+difference between these choices catastrophic rather than minor.
 
 == Why λ = 0.01 fails (the feedback loop) ==
 
@@ -40,30 +42,35 @@ of 10^14 under λ=0.01 compared to a stable ~160 under λ=1.0. The feedback loop
     σ_min → 0  →  C_inv_max = 10  →  ΔW_K large in degenerate directions
              →  lam_nat grows  →  λ/lam_nat shrinks  →  worse calibration
 
-== Why λ = 1.0 fixes it ==
+== Why an order-one λ fixes it ==
 
-Setting λ=1.0 caps C_inv_max ≤ 1/√λ = 1.0 regardless of how σ_min evolves.
-Degenerate directions receive no more amplification than unit-norm directions —
-no runaway. In the standard Tikhonov picture: λ=1.0 is large enough that the
-regularised inverse is effectively bounded even when the true Gram is rank-deficient,
-which is the persistent condition here due to the gauge orbit.
+Setting λ near 1 caps C_inv_max regardless of how σ_min evolves. Degenerate
+directions receive little amplification, avoiding runaway updates. In the
+standard Tikhonov picture, an order-one λ keeps the regularised inverse bounded
+even when the true Gram is rank-deficient, which is the persistent condition
+here due to the gauge orbit.
 
-λ sweep result (lr=1.5, standard benchmark):
+Historical λ sweep result (lr=1.5 with cosine decay, standard benchmark):
 
     λ=0.01 → MSE 1983  (10× amplification, runaway spectrum)
     λ=1.0  → MSE 2.27  (1× amplification, stable)   ← optimal
     λ=10.0 → MSE 6.6   (whitening too suppressed)
 
+That sweep established the stable scale but predates the current log-normal LR
+schedule. With that schedule, a paired local CPU run gave MSE 0.05968 for
+λ=1.0 and 0.04096 for λ=0.75.
+
 == The natural-λ interpretation ==
 
-lam_nat = tr(W_K^T W_K)/d is the mean squared singular value. With λ=1.0:
+lam_nat = tr(W_K^T W_K)/d is the mean squared singular value. With λ near 1:
 
     Small-teacher regime (lam_nat ≈ 1):  λ ≈ lam_nat → C_inv_max = 1.0
     Large-teacher regime (lam_nat ≈ 300): λ << lam_nat → bulk whitening is natural
                                            (sv >> 1, so (sv² + 1)^{-1/2} ≈ 1/sv)
 
-In both regimes, λ=1.0 provides a stable floor without over-suppressing the
-whitening of the well-conditioned directions. This is the primary recommendation.
+In both regimes, an order-one λ provides a stable floor without over-suppressing
+the whitening of the well-conditioned directions. The current fixed default is
+λ=0.75.
 
 == Adaptive mode ==
 
@@ -73,7 +80,7 @@ tracks the spectrum automatically. This is most useful when lam_nat ≈ 1, where
 adaptive ε=1.0 is equivalent to fixed λ=1.0.
 
 Note: adaptive mode is WORSE on the standard benchmark (lam_nat → 300 → λ → 300 →
-C_inv_max → 0.058, too conservative). Use fixed λ=1.0 for best results here.
+C_inv_max → 0.058, too conservative). Use fixed λ=0.75 for the current setup.
 """
 from __future__ import annotations
 
@@ -196,9 +203,9 @@ def _cm_ov_delta(
 # ---------------------------------------------------------------------------
 
 class Submission(torch.optim.Optimizer):
-    """Compositional Muon with λ=1.0 and log-normal LR schedule for the caffeine benchmark.
+    """Compositional Muon with λ=0.75 and log-normal LR schedule for the caffeine benchmark.
 
-    The key hyperparameter is lambda_reg=1.0 (see module docstring).
+    The key hyperparameter is lambda_reg=0.75 (see module docstring).
 
     == Log-normal LR schedule ==
 
@@ -232,7 +239,7 @@ class Submission(torch.optim.Optimizer):
     Args:
         params:         model.parameters()
         lr:             peak learning rate (lr_max in the log-normal schedule)
-        lambda_reg:     Tikhonov regularisation for Gram inverse (1.0 recommended)
+        lambda_reg:     Tikhonov regularisation for Gram inverse (0.75 recommended)
         adaptive:       if True, use λ = max(eps × lam_nat, lam_min) per step
         eps:            adaptive λ scale factor (only used when adaptive=True)
         lam_min:        minimum λ in adaptive mode
@@ -249,7 +256,7 @@ class Submission(torch.optim.Optimizer):
         self,
         params,
         lr: float = 3.0,
-        lambda_reg: float = 1.0,
+        lambda_reg: float = 0.75,
         adaptive: bool = False,
         eps: float = 1.0,
         lam_min: float = 0.1,
